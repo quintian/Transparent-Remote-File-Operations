@@ -20,9 +20,13 @@
 #define MAXMSGLEN 100
 
 int op; // operation ID
-size_t totalSize = 0;
+size_t totalSize;
 
 int (*orig_close)(int fildes);
+
+void receiveHelper()
+{
+}
 
 void sendHelper(char *name, ssize_t totalSize)
 {
@@ -82,10 +86,24 @@ void sendHelper(char *name, ssize_t totalSize)
 	size_t totalSent = 0;
 	while (totalSent < totalSize)
 	{
-		totalSent += send(sockfd, name, strlen(name) + 1, 0);
+		totalSent += send(sockfd, name + totalSent, totalSize - totalSent, 0); // changed!
 	}
+	fprintf(stderr, "totalSent: %ld \n", totalSent);
 
 	// send(sockfd, name, strlen(name) + 1, 0);
+
+	// get message back
+	char buf[1024];
+	fprintf(stderr, "before client got messge back: %s\n", buf);
+
+	rv = recv(sockfd, buf, MAXMSGLEN, 0); // get message
+	if (rv < 0)
+		err(1, 0); // in case something went wrong
+	buf[rv] = 0;   // null terminate string to print
+	int fd = *(int *)buf;
+	int e = *(int *)(buf + sizeof(int));
+	fprintf(stderr, "client got messge back fd: %d\n", fd);
+	fprintf(stderr, "client got messge back errno: %d\n", e);
 
 	orig_close(sockfd);
 }
@@ -114,7 +132,7 @@ int open(const char *pathname, int flags, ...)
 	op = 0;
 	size_t n = strlen(pathname);
 	// total size of msg: size_t total, int op, int flag, size_t n, char *path, mode_t m
-	totalSize = 2 * sizeof(int) + 2 * sizeof(size_t) + n + sizeof(mode_t) + 1; // changed
+	totalSize = 2 * sizeof(int) + 2 * sizeof(size_t) + n + sizeof(mode_t); // changed
 	fprintf(stderr, "pathname: %s\n", pathname);
 	// snprintf(buf, totalSize, "%zu%d%d%zu%s%o", totalSize, op, flags, n, pathname, m);
 	int i = 0;
@@ -127,7 +145,7 @@ int open(const char *pathname, int flags, ...)
 	i += sizeof(int);
 	memcpy(buf + i, &n, sizeof(size_t));
 	i += sizeof(size_t);
-	
+
 	memcpy(buf + i, pathname, n);
 	i += n;
 	memcpy(buf + i, &m, sizeof(mode_t));
@@ -136,6 +154,8 @@ int open(const char *pathname, int flags, ...)
 
 	fprintf(stderr, "open() called by path: %s \n message: %s\n", pathname, buf);
 	// char *msg = "open";
+
+	fprintf(stderr, "total size before send:  %ld\n", totalSize);
 	sendHelper(buf, totalSize);
 
 	// free(buf);
