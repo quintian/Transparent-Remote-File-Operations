@@ -16,16 +16,173 @@
 #include <string.h>
 #include <err.h>
 #include <stdlib.h>
+#include <errno.h>
 
 #define MAXMSGLEN 100
 
-int op; // operation ID
+// int op; // operation ID
 size_t totalSize;
 
 int (*orig_close)(int fildes);
 
-void receiveHelper()
+void receiveHelper(char *buf, int sockfd, size_t recvSize)
 {
+	size_t totalReceive = 0;
+	// while (totalReceive < sizeof(size_t))
+	// {
+	// 	fprintf(stderr, "here:130 ");
+
+	// 	totalReceive += recv(sessfd, buf + totalReceive, sizeof(size_t) - totalReceive, 0);
+	// }
+
+	// memcpy(&totalSize, buf, sizeof(size_t));
+	// fprintf(stderr, "total size after first loop:  %ld\n, totalReceive: %ld", totalSize, totalReceive);
+
+	while (totalReceive < recvSize)
+
+	{
+		fprintf(stderr, "here:144 ");
+		totalReceive += recv(sockfd, buf + totalReceive, recvSize - totalReceive, 0);
+	}
+	fprintf(stderr, "totalSize: %ld\ntotalReceive: %ld\n", recvSize, totalReceive);
+}
+
+int openSocket(){
+	// connect to server - code from clinet.c line 13-51
+	char *serverip;
+	char *serverport;
+	unsigned short port;
+	// char *msg = "Hello from client";
+	// char buf[MAXMSGLEN + 1];
+	int sockfd, rv;
+	struct sockaddr_in srv;
+
+	// Get environment variable indicating the ip address of the server
+	serverip = getenv("server15440");
+	if (serverip)
+		fprintf(stderr, "Got environment variable server15540: %s\n", serverip);
+	else
+	{
+		fprintf(stderr, "Environment variable server15440 not found.  Using 127.0.0.1\n");
+		serverip = "127.0.0.1";
+	}
+
+	// Get environment variable indicating the port of the server
+	serverport = getenv("serverport15440");
+	if (serverport)
+		fprintf(stderr, "Got environment variable serverport15440: %s\n", serverport);
+	else
+	{
+		fprintf(stderr, "Environment variable serverport15440 not found.  Using 15440\n");
+		serverport = "15440";
+	}
+	port = (unsigned short)atoi(serverport);
+
+	// Create socket
+	sockfd = socket(AF_INET, SOCK_STREAM, 0); // TCP/IP socket
+	if (sockfd < 0)
+	{
+		err(1, 0);							   // in case of error
+		fprintf(stderr, "Error: sockfd<0 \n"); // added
+	}
+
+	// setup address structure to point to server
+	memset(&srv, 0, sizeof(srv));			   // clear it first
+	srv.sin_family = AF_INET;				   // IP family
+	srv.sin_addr.s_addr = inet_addr(serverip); // IP address of server
+	srv.sin_port = htons(port);				   // server port
+
+	// actually connect to the server
+	rv = connect(sockfd, (struct sockaddr *)&srv, sizeof(struct sockaddr));
+	if (rv < 0)
+	{
+		err(1, 0);
+		fprintf(stderr, "Error: rv<0 \n"); // added
+	}
+	return sockfd;
+}
+void sendRequest(char *buf, size_t totalSize, int sockfd){
+	size_t totalSent = 0;
+	while (totalSent < totalSize)
+	{
+		totalSent += send(sockfd, buf + totalSent, totalSize - totalSent, 0); // changed!
+	}
+	fprintf(stderr, "totalSent: %ld \n", totalSent);
+}
+void send_recv(char *name, ssize_t totalSize)
+{
+	// connect to server - code from clinet.c line 13-51
+	char *serverip;
+	char *serverport;
+	unsigned short port;
+	// char *msg = "Hello from client";
+	// char buf[MAXMSGLEN + 1];
+	int sockfd, rv;
+	struct sockaddr_in srv;
+
+	// Get environment variable indicating the ip address of the server
+	serverip = getenv("server15440");
+	if (serverip)
+		fprintf(stderr, "Got environment variable server15540: %s\n", serverip);
+	else
+	{
+		fprintf(stderr, "Environment variable server15440 not found.  Using 127.0.0.1\n");
+		serverip = "127.0.0.1";
+	}
+
+	// Get environment variable indicating the port of the server
+	serverport = getenv("serverport15440");
+	if (serverport)
+		fprintf(stderr, "Got environment variable serverport15440: %s\n", serverport);
+	else
+	{
+		fprintf(stderr, "Environment variable serverport15440 not found.  Using 15440\n");
+		serverport = "15440";
+	}
+	port = (unsigned short)atoi(serverport);
+
+	// Create socket
+	sockfd = socket(AF_INET, SOCK_STREAM, 0); // TCP/IP socket
+	if (sockfd < 0)
+	{
+		err(1, 0);							   // in case of error
+		fprintf(stderr, "Error: sockfd<0 \n"); // added
+	}
+
+	// setup address structure to point to server
+	memset(&srv, 0, sizeof(srv));			   // clear it first
+	srv.sin_family = AF_INET;				   // IP family
+	srv.sin_addr.s_addr = inet_addr(serverip); // IP address of server
+	srv.sin_port = htons(port);				   // server port
+
+	// actually connect to the server
+	rv = connect(sockfd, (struct sockaddr *)&srv, sizeof(struct sockaddr));
+	if (rv < 0)
+	{
+		err(1, 0);
+		fprintf(stderr, "Error: rv<0 \n"); // added
+	}
+	// send
+	size_t totalSent = 0;
+	while (totalSent < totalSize)
+	{
+		totalSent += send(sockfd, name + totalSent, totalSize - totalSent, 0); // changed!
+	}
+	fprintf(stderr, "totalSent: %ld \n", totalSent);
+
+	// send(sockfd, name, strlen(name) + 1, 0);
+	// get message back
+	char buf[1024];
+	fprintf(stderr, "before client got messge back: %s\n", buf);
+
+	size_t recvSize = 2 * sizeof(int);
+	receiveHelper(buf, sockfd, recvSize);
+
+	int fd = *(int *)buf;
+	int e = *(int *)(buf + sizeof(int));
+	fprintf(stderr, "client got messge back fd: %d\n", fd);
+	fprintf(stderr, "client got messge back errno: %d\n", e);
+	orig_close(sockfd);
 }
 
 void sendHelper(char *name, ssize_t totalSize)
@@ -96,14 +253,18 @@ void sendHelper(char *name, ssize_t totalSize)
 	char buf[1024];
 	fprintf(stderr, "before client got messge back: %s\n", buf);
 
-	rv = recv(sockfd, buf, MAXMSGLEN, 0); // get message
-	if (rv < 0)
-		err(1, 0); // in case something went wrong
-	buf[rv] = 0;   // null terminate string to print
-	int fd = *(int *)buf;
-	int e = *(int *)(buf + sizeof(int));
-	fprintf(stderr, "client got messge back fd: %d\n", fd);
-	fprintf(stderr, "client got messge back errno: %d\n", e);
+	size_t recvSize = 2 * sizeof(int);
+	receiveHelper(buf, sockfd, recvSize);
+
+	// rv = recv(sockfd, buf, MAXMSGLEN, 0); // get message
+	// if (rv < 0)
+	// 	err(1, 0); // in case something went wrong
+	// buf[rv] = 0;   // null terminate string to print
+
+	// int fd = *(int *)buf;
+	// int e = *(int *)(buf + sizeof(int));
+	// fprintf(stderr, "client got messge back fd: %d\n", fd);
+	// fprintf(stderr, "client got messge back errno: %d\n", e);
 
 	orig_close(sockfd);
 }
@@ -129,7 +290,7 @@ int open(const char *pathname, int flags, ...)
 	}
 	// we just print a message, then call through to the original open function (from libc)
 
-	op = 0;
+	int op = 0;
 	size_t n = strlen(pathname);
 	// total size of msg: size_t total, int op, int flag, size_t n, char *path, mode_t m
 	totalSize = 2 * sizeof(int) + 2 * sizeof(size_t) + n + sizeof(mode_t); // changed
@@ -156,11 +317,29 @@ int open(const char *pathname, int flags, ...)
 	// char *msg = "open";
 
 	fprintf(stderr, "total size before send:  %ld\n", totalSize);
-	sendHelper(buf, totalSize);
+	//send_recv(buf, totalSize);
+	int sockfd=openSocket();
+	sendRequest(buf, totalSize, sockfd);
 
-	// free(buf);
+	char buf2[1024];
+	size_t recvSize = 2 * sizeof(int);
+	receiveHelper(buf2, sockfd, recvSize);
+	
+	// get message back
+	// char buf[1024];
+	// fprintf(stderr, "before client got messge back: %s\n", buf);
 
-	return orig_open(pathname, flags, m);
+	// size_t recvSize = 2 * sizeof(int);
+	// receiveHelper(buf, sockfd, recvSize);
+
+	int fd = *(int *)buf2;
+	int e = *(int *)(buf2 + sizeof(int));
+	fprintf(stderr, "client got messge back fd: %d\n", fd);
+	fprintf(stderr, "client got messge back errno: %d\n", e);
+	errno = e;
+	return fd;
+
+	// return orig_open(pathname, flags, m);
 }
 
 int close(int fildes)
