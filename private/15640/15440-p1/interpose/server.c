@@ -23,25 +23,24 @@ question: 1. for send, recv, better to use the same buf? 2. seperate connect, se
 void *thread()
 */
 
-size_t totalSize = 0;
 // receive the full length msg from client
 void receiveHelper(char *buf, int sessfd)
 {
+	size_t totalSize;
 	size_t totalReceive = 0;
 	while (totalReceive < sizeof(size_t))
 	{
-		fprintf(stderr, "here:130 ");
+		fprintf(stderr, "here:130 \n");
 
 		totalReceive += recv(sessfd, buf + totalReceive, sizeof(size_t) - totalReceive, 0);
 	}
 
 	memcpy(&totalSize, buf, sizeof(size_t));
-	fprintf(stderr, "total size after first loop:  %ld\n, totalReceive: %ld", totalSize, totalReceive);
+	// fprintf(stderr, "total size after first loop:  %ld\n, totalReceive: %ld", totalSize, totalReceive);
 
 	while (totalReceive < totalSize)
-
 	{
-		fprintf(stderr, "here:144 ");
+		fprintf(stderr, "here:144 \n");
 		totalReceive += recv(sessfd, buf + totalReceive, totalSize - totalReceive, 0);
 	}
 	fprintf(stderr, "totalSize: %ld\ntotalReceive: %ld\n", totalSize, totalReceive);
@@ -117,6 +116,10 @@ void openHelper(char *buf, int sessfd)
 	send(sessfd, buf, sizeof(int) * 2, 0);
 }
 
+void closeHelper(char *buf, int sessfd)
+{
+}
+
 int main(int argc, char **argv)
 {
 	// char *msg = "Hello from server";
@@ -164,20 +167,7 @@ int main(int argc, char **argv)
 		if (sessfd < 0)
 			err(1, 0);
 
-		// get messages and send replies to this client, until it goes away
-		// while ((rv = recv(sessfd, buf, MAXMSGLEN, 0)) > 0)
-		// {
-		// 	buf[rv] = 0; // null terminate string to print
-
-		// 	fprintf(stderr, "received msg: %s\n", buf);
-		// 	// receiveHelper(buf, sessfd); // 2 while loop??
-
-		// 	// send reply
-		// 	// printf("server replying to client: %s\n", msg);
-		// 	// printf("server replying to client: %s\n", buf); //changed!!
-		// 	// send(sessfd, msg, strlen(msg), 0); // should check return value
-		// }
-
+		// get messages and send replies to this client
 		receiveHelper(buf, sessfd);
 
 		int op = *(int *)(buf + sizeof(size_t));
