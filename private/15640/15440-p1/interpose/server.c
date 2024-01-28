@@ -16,10 +16,9 @@
 /*
 
 */
-
-// receive the full length msg from client
-void receiveHelper(char *buf, int sessfd)
+size_t receiveTotalSize(int sessfd)
 {
+	char buf[sizeof(size_t)];
 	size_t totalSize;
 	size_t totalReceive = 0;
 	while (totalReceive < sizeof(size_t))
@@ -30,23 +29,30 @@ void receiveHelper(char *buf, int sessfd)
 	}
 
 	memcpy(&totalSize, buf, sizeof(size_t));
-	// fprintf(stderr, "total size after first loop:  %ld\n, totalReceive: %ld", totalSize, totalReceive);
+	fprintf(stderr, "total size after first loop:  %ld\n, totalReceive: %ld", totalSize, totalReceive);
+	return totalSize - sizeof(size_t);
+}
+// receive the full length msg from client
+void receiveHelper(char *buf, int sessfd, size_t totalSize)
+{
+	// size_t totalSize;
+	size_t totalReceive = 0;
+	// while (totalReceive < sizeof(size_t))
+	// {
+	// 	totalReceive += recv(sessfd, buf + totalReceive, sizeof(size_t) - totalReceive, 0);
+	// }
+	// memcpy(&totalSize, buf, sizeof(size_t));
 
+	// totalReceive=0;
 	while (totalReceive < totalSize)
 	{
-		fprintf(stderr, "here:144 \n");
+		// fprintf(stderr, "here:144 \n");
 		totalReceive += recv(sessfd, buf + totalReceive, totalSize - totalReceive, 0);
 	}
 	fprintf(stderr, "totalSize: %ld\ntotalReceive: %ld\n", totalSize, totalReceive);
-	// size_t totalReceive = 0;
-	// memcpy(&totalSize, buf, sizeof(size_t));
-	// totalReceive += sizeof(size_t);
-
-	// while (totalReceive < totalSize)
-	// {
-	// 	totalReceive += recv(sessfd, buf + totalReceive, totalSize - totalReceive, 0);
-	// }
+	// return buf;
 }
+
 void recvVariable(char *buf, int sessfd, size_t vSize)
 {
 	// memcpy(&totalSize, buf, sizeof(size_t));
@@ -71,7 +77,7 @@ void openHelper(char *buf, int sessfd)
 
 	// //op=*(int*)buf,
 	// memcpy(&totalSize,buf, sizeof(size_t));
-	i += sizeof(size_t); // offset for totalSize at the beginning
+	// i += sizeof(size_t); // offset for totalSize at the beginning
 
 	// memcpy(&op, buf + i, sizeof(int));
 	op = *(int *)(buf + i); // 1. op
@@ -105,11 +111,11 @@ void openHelper(char *buf, int sessfd)
 	// {
 	// 	fd += FDADD;
 	// }
-
-	memcpy(buf, &fd, sizeof(int));
-	memcpy(buf + sizeof(int), &e, sizeof(int));
+	char buf2[2 * sizeof(int)]; // buf2 to hold msg back to clent
+	memcpy(buf2, &fd, sizeof(int));
+	memcpy(buf2 + sizeof(int), &e, sizeof(int));
 	fprintf(stderr, "msg returned fd, e: %d, %d\n", fd, e);
-	send(sessfd, buf, sizeof(int) * 2, 0);
+	send(sessfd, buf2, sizeof(int) * 2, 0);
 }
 
 void closeHelper(char *buf, int sessfd)
@@ -121,7 +127,7 @@ void closeHelper(char *buf, int sessfd)
 
 	// //op=*(int*)buf,
 	// memcpy(&totalSize,buf, sizeof(size_t));
-	i += sizeof(size_t); // offset for totalSize at the beginning
+	// i += sizeof(size_t); // offset for totalSize at the beginning
 
 	// memcpy(&op, buf + i, sizeof(int));
 	op = *(int *)(buf + i);
@@ -138,10 +144,11 @@ void closeHelper(char *buf, int sessfd)
 	int closeReturn = close(fd);
 	int e = errno;
 
-	memcpy(buf, &closeReturn, sizeof(int));
-	memcpy(buf + sizeof(int), &e, sizeof(int));
+	char buf2[2 * sizeof(int)]; // buf2 to hold msg back to clent
+	memcpy(buf2, &closeReturn, sizeof(int));
+	memcpy(buf2 + sizeof(int), &e, sizeof(int));
 	fprintf(stderr, "msg returned fd, e: %d, %d\n", closeReturn, e);
-	send(sessfd, buf, sizeof(int) * 2, 0);
+	send(sessfd, buf2, sizeof(int) * 2, 0);
 }
 // test write(): 440write, then on client side, type text to write, then control d, control c
 void writeHelper(char *buf, int sessfd)
@@ -155,7 +162,7 @@ void writeHelper(char *buf, int sessfd)
 
 	// //op=*(int*)buf,
 	// memcpy(&totalSize,buf, sizeof(size_t));
-	i += sizeof(size_t); // offset for totalSize at the beginning
+	// i += sizeof(size_t); // offset for totalSize at the beginning
 
 	// memcpy(&op, buf + i, sizeof(int));
 	op = *(int *)(buf + i);
@@ -178,17 +185,19 @@ void writeHelper(char *buf, int sessfd)
 	int writeReturn = write(fd, bufToWrite, nbyte);
 	int e = errno;
 
-	memcpy(buf, &writeReturn, sizeof(int));
-	memcpy(buf + sizeof(int), &e, sizeof(int));
+	char buf2[2 * sizeof(int)]; // buf2 to hold msg back to clent
+
+	memcpy(buf2, &writeReturn, sizeof(int));
+	memcpy(buf2 + sizeof(int), &e, sizeof(int));
 	fprintf(stderr, "msg returned fd, e: %d, %d\n", writeReturn, e);
-	send(sessfd, buf, sizeof(int) * 2, 0);
+	send(sessfd, buf2, sizeof(int) * 2, 0);
 }
 
 int main(int argc, char **argv)
 {
 	// char *msg = "Hello from server";
 	// char buf[MAXMSGLEN + 1];
-	char buf[2000];
+	// char buf[2000];
 	char *serverport;
 	unsigned short port;
 	int sockfd, sessfd, rv;
@@ -232,10 +241,12 @@ int main(int argc, char **argv)
 		if (sessfd < 0)
 			err(1, 0);
 
-		// get messages and send replies to this client
-		receiveHelper(buf, sessfd);
-
-		int op = *(int *)(buf + sizeof(size_t));
+		// receive requests and send replies to this client
+		size_t totalSize = receiveTotalSize(sessfd);
+		char buf[totalSize];
+		receiveHelper(buf, sessfd, totalSize);
+		// get operation code, then handle the request
+		int op = *(int *)(buf);
 		switch (op)
 		{
 		case 0:
