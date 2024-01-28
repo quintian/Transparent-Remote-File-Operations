@@ -2,13 +2,11 @@
 
 #include <dlfcn.h>
 #include <stdio.h>
-
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <stdarg.h>
-
 #include <arpa/inet.h>
 
 #include <netinet/in.h>
@@ -19,9 +17,10 @@
 #include <errno.h>
 
 #define MAXMSGLEN 100
+#define FDADD 1000
 
 // int op; // operation ID
-//size_t totalSize;
+// size_t totalSize;
 
 int (*orig_close)(int fildes);
 
@@ -187,7 +186,7 @@ void send_recv(char *name, ssize_t totalSize)
 	orig_close(sockfd);
 }
 
-void sendHelper(char *name, ssize_t totalSize)
+void sendHelper(char *name)
 {
 
 	// connect to server - code from clinet.c line 13-51
@@ -242,21 +241,22 @@ void sendHelper(char *name, ssize_t totalSize)
 		fprintf(stderr, "Error: rv<0 \n"); // added
 	}
 	// send
-	size_t totalSent = 0;
-	while (totalSent < totalSize)
-	{
-		totalSent += send(sockfd, name + totalSent, totalSize - totalSent, 0); // changed!
-	}
-	fprintf(stderr, "totalSent: %ld \n", totalSent);
+	// size_t totalSent = 0;
+	// while (totalSent < totalSize)
+	// {
+	// 	totalSent += send(sockfd, name + totalSent, totalSize - totalSent, 0); // changed!
+	// }
+	// fprintf(stderr, "totalSent: %ld \n", totalSent);
 
 	// send(sockfd, name, strlen(name) + 1, 0);
+	send(sockfd, name, strlen(name) + 1, 0);
 
 	// get message back
-	char buf[1024];
-	fprintf(stderr, "before client got messge back: %s\n", buf);
+	// char buf[1024];
+	// fprintf(stderr, "before client got messge back: %s\n", buf);
 
-	size_t recvSize = 2 * sizeof(int);
-	receiveHelper(buf, sockfd, recvSize);
+	// size_t recvSize = 2 * sizeof(int);
+	// receiveHelper(buf, sockfd, recvSize);
 
 	// rv = recv(sockfd, buf, MAXMSGLEN, 0); // get message
 	// if (rv < 0)
@@ -299,23 +299,23 @@ int open(const char *pathname, int flags, ...)
 	fprintf(stderr, "pathname: %s\n", pathname);
 	// snprintf(buf, totalSize, "%zu%d%d%zu%s%o", totalSize, op, flags, n, pathname, m);
 	int i = 0;
-	memcpy(buf + i, &totalSize, sizeof(size_t));
+	memcpy(buf, &totalSize, sizeof(size_t));
 	fprintf(stderr, "open() called by path 1: %s \n buf: %s with total size %ld\n", pathname, buf, totalSize);
 	i += sizeof(size_t);
-	memcpy(buf + i, &op, sizeof(int));
+	memcpy(buf + i, &op, sizeof(int)); // 1. op
 	i += sizeof(int);
-	memcpy(buf + i, &flags, sizeof(int));
+	memcpy(buf + i, &flags, sizeof(int)); // 2. flags
 	i += sizeof(int);
-	memcpy(buf + i, &n, sizeof(size_t));
+	memcpy(buf + i, &n, sizeof(size_t)); // 3. n
 	i += sizeof(size_t);
 
-	memcpy(buf + i, pathname, n);
+	memcpy(buf + i, pathname, n); // 4. pathname
 	i += n;
-	memcpy(buf + i, &m, sizeof(mode_t));
-	buf[i] = '\0';
-	fprintf(stderr, "message sent to server: %s", buf);
+	memcpy(buf + i, &m, sizeof(mode_t)); // 5. m
+	// buf[i] = '\0';
 
-	fprintf(stderr, "open() called by path: %s \n message: %s\n", pathname, buf);
+	fprintf(stderr, "m sent: %o\n",  *(mode_t *)(buf + i));
+	fprintf(stderr, "open() called by path: %s \n mode: %o\n", pathname, m);
 	// char *msg = "open";
 
 	fprintf(stderr, "total size before send:  %ld\n", totalSize);
@@ -327,6 +327,7 @@ int open(const char *pathname, int flags, ...)
 	char buf2[1024];
 	size_t recvSize = 2 * sizeof(int);
 	receiveHelper(buf2, sockfd, recvSize);
+	orig_close(sockfd);
 
 	int fd = *(int *)buf2;
 	int e = *(int *)(buf2 + sizeof(int));
@@ -341,19 +342,20 @@ int open(const char *pathname, int flags, ...)
 int close(int fd)
 { // helper funciton to forward requests to server
 	// msg = "close";
+	fprintf(stderr, "close() called\n");
 
 	char buf[1024];
 	int op = 1;
-	size_t totalSize = sizeof(size_t) + 2*sizeof(int);
-	
+	size_t totalSize = sizeof(size_t) + 2 * sizeof(int);
+
 	// snprintf(buf, totalSize, "%zu%d%d%zu%s%o", totalSize, op, flags, n, pathname, m);
 	int i = 0;
-	memcpy(buf + i, &totalSize, sizeof(size_t)); //changed!
-	i+=sizeof(size_t);
-	
+	memcpy(buf + i, &totalSize, sizeof(size_t)); // changed!
+	i += sizeof(size_t);
+
 	memcpy(buf + i, &op, sizeof(int));
 	i += sizeof(int);
-
+	// fd += FDADD;
 	memcpy(buf + i, &fd, sizeof(int));
 
 	int sockfd = openSocket();
@@ -365,14 +367,14 @@ int close(int fd)
 	char buf2[1024];
 	size_t recvSize = 2 * sizeof(int);
 	receiveHelper(buf2, sockfd, recvSize);
+	orig_close(sockfd);
 
 	int returned = *(int *)buf2;
 	int e = *(int *)(buf2 + sizeof(int));
-	fprintf(stderr, "client got messge back fd: %d\n", fd);
+	fprintf(stderr, "client got messge back close returned: %d\n", returned);
 	fprintf(stderr, "client got messge back errno: %d\n", e);
 	errno = e;
 	return returned;
-
 }
 
 ssize_t (*orig_read)(int fildes, void *buf, size_t nbyte);
@@ -380,11 +382,11 @@ ssize_t (*orig_read)(int fildes, void *buf, size_t nbyte);
 ssize_t read(int fildes, void *buf, size_t nbyte)
 {
 
-	char *msg = "read";
-	// send_recv();
-	// send(sockfd, msg, strlen(msg) + 1, 0);
+	// char *msg = "read";
+	//  send_recv();
+	//  send(sockfd, msg, strlen(msg) + 1, 0);
 	// sendHelper(msg);
-	//sendHelper(msg, totalSize);
+	//  sendHelper(msg, totalSize);
 
 	fprintf(stderr, "read() called with %ld bytes\n", nbyte);
 	return orig_read(fildes, buf, nbyte);
@@ -394,28 +396,60 @@ ssize_t (*orig_write)(int fildes, const void *buf, size_t nbyte);
 
 ssize_t write(int fildes, const void *buf, size_t nbyte)
 {
-	char *msg = "write";
-
-	// strcpy(msg, "write");
-	// send_recv();
-	// send(sockfd, msg, strlen(msg) + 1, 0);
+	fprintf(stderr, "write() called\n");
+	// char *msg = "write";
 	// sendHelper(msg);
-	//sendHelper(msg, totalSize);
+
+	int op = 2;
+	// size_t n = strlen(pathname);
+	//  total size of msg: size_t total, int op, int fd, size_t nbyte, buf,
+	size_t totalSize = 2 * sizeof(int) + 2 * sizeof(size_t) + nbyte; // changed
+	char bufSend[totalSize];
+	fprintf(stderr, "buf: %s\n", (char *)buf);
+	// snprintf(buf, totalSize, "%zu%d%d%zu%s%o", totalSize, op, flags, n, pathname, m);
+	int i = 0;
+	memcpy(bufSend + i, &totalSize, sizeof(size_t));
+	fprintf(stderr, "open() called by buf: %s with total size %ld\n", (char *)buf, totalSize);
+	i += sizeof(size_t);
+	memcpy(bufSend + i, &op, sizeof(int));
+	i += sizeof(int);
+	memcpy(bufSend + i, &fildes, sizeof(int));
+	i += sizeof(int);
+	memcpy(bufSend + i, &nbyte, sizeof(size_t));
+	i += sizeof(size_t);
+	memcpy(bufSend + i, buf, nbyte);
+
+	int sockfd = openSocket();
+	sendRequest(bufSend, totalSize, sockfd);
+
+	// get message back
+	char buf2[1024];
+	size_t recvSize = 2 * sizeof(int);
+	receiveHelper(buf2, sockfd, recvSize);
+	orig_close(sockfd);
+
+	//  sendHelper(msg, totalSize);
 	fprintf(stderr, "write() called fd %d with %ld bytes\n", fildes, nbyte);
-	return orig_write(fildes, buf, nbyte);
+	int returned = *(int *)buf2;
+	int e = *(int *)(buf2 + sizeof(int));
+	fprintf(stderr, "client got messge back write returned: %d\n", returned);
+	fprintf(stderr, "client got messge back errno: %d\n", e);
+	errno = e;
+	return returned;
+	// return orig_write(fildes, buf, nbyte);
 }
 
 ssize_t (*orig_lseek)(int fildes, off_t offset, int whence);
 
 ssize_t lseek(int fildes, off_t offset, int whence)
 {
-	char *msg = "lseek";
+	// char *msg = "lseek";
 
 	// strcpy(msg, "lseek");
 	// send_recv();
 	// send(sockfd, msg, strlen(msg) + 1, 0);
 	// sendHelper(msg);
-	//sendHelper(msg, totalSize);
+	// sendHelper(msg, totalSize);
 
 	fprintf(stderr, "lseek() called fd %d with %ld offset\n", fildes, offset);
 	return orig_lseek(fildes, offset, whence);
@@ -426,13 +460,13 @@ int (*orig_stat)(const char *restrict pathname,
 
 int stat(const char *restrict pathname, struct stat *restrict statbuf)
 {
-	char *msg = "stat";
+	// char *msg = "stat";
 
 	// strcpy(msg, "stat");
 	// send_recv();
 	// send(sockfd, msg, strlen(msg) + 1, 0);
 	// sendHelper(msg);
-	//sendHelper(msg, totalSize);
+	// sendHelper(msg, totalSize);
 
 	fprintf(stderr, "stat() called path %s\n", pathname);
 	return orig_stat(pathname, statbuf);
@@ -443,12 +477,12 @@ int (*orig_unlink)(const char *pathname);
 int unlink(const char *pathname)
 {
 
-	char *msg = "unlink";
+	// char *msg = "unlink";
 
 	// send_recv();
 	// send(sockfd, msg, strlen(msg) + 1, 0);
 	// sendHelper(msg);
-	//sendHelper(msg, totalSize);
+	// sendHelper(msg, totalSize);
 	fprintf(stderr, "unlink() called path %s \n", pathname);
 	return orig_unlink(pathname);
 }
@@ -460,12 +494,12 @@ ssize_t getdirentries(int fd, char *buf, size_t nbyte,
 					  off_t *restrict basep)
 {
 
-	char *msg = "getdirentries";
-	// send_recv();
-	//  fprintf(stderr, "read\n");
-	// send(sockfd, msg, strlen(msg) + 1, 0);
+	// char *msg = "getdirentries";
+	//  send_recv();
+	//   fprintf(stderr, "read\n");
+	//  send(sockfd, msg, strlen(msg) + 1, 0);
 	// sendHelper(msg);
-	//sendHelper(msg, totalSize);
+	//  sendHelper(msg, totalSize);
 	fprintf(stderr, "getdirentries() called fd %d with %ld bytes\n", fd, nbyte);
 	return orig_getdirentries(fd, buf, nbyte, basep);
 }
@@ -480,11 +514,11 @@ struct dirtreenode *(*orig_getdirtree)(const char *path);
 
 struct dirtreenode *getdirtree(const char *path)
 {
-	char *msg = "getdirtree";
+	// char *msg = "getdirtree";
 
 	// send(sockfd, msg, strlen(msg) + 1, 0);
 	// sendHelper(msg);
-	//sendHelper(msg, totalSize);
+	// sendHelper(msg, totalSize);
 	// send_recv();
 
 	fprintf(stderr, "getdirtree() called path %s \n", path);
@@ -494,10 +528,10 @@ struct dirtreenode *getdirtree(const char *path)
 void (*orig_freedirtree)(struct dirtreenode *dt);
 void freedirtree(struct dirtreenode *dt)
 {
-	char *msg = "freedirtree";
+	// char *msg = "freedirtree";
 
 	// send(sockfd, msg, strlen(msg) + 1, 0);
-	//sendHelper(msg, totalSize);
+	// sendHelper(msg);
 	// send_recv();
 
 	fprintf(stderr, "freedirtree() called  \n");
@@ -509,14 +543,13 @@ void _init(void)
 {
 	// set function pointer orig_open to point to the original open function
 	orig_open = dlsym(RTLD_NEXT, "open");
-	// orig_read = dlsym(RTLD_NEXT, "read");
-	 //orig_close = dlsym(RTLD_NEXT, "close");
-	// orig_write = dlsym(RTLD_NEXT, "write");
-	// orig_lseek = dlsym(RTLD_NEXT, "lseek");
-	// orig_stat = dlsym(RTLD_NEXT, "stat");
-	// orig_unlink = dlsym(RTLD_NEXT, "unlink");
-	// orig_getdirentries = dlsym(RTLD_NEXT, "getdirentries");
-	// orig_getdirtree = dlsym(RTLD_NEXT, "getdirtree");
-	// orig_freedirtree = dlsym(RTLD_NEXT, "freedirtree");
-	
+	orig_read = dlsym(RTLD_NEXT, "read");
+	orig_close = dlsym(RTLD_NEXT, "close");
+	orig_write = dlsym(RTLD_NEXT, "write");
+	orig_lseek = dlsym(RTLD_NEXT, "lseek");
+	orig_stat = dlsym(RTLD_NEXT, "stat");
+	orig_unlink = dlsym(RTLD_NEXT, "unlink");
+	orig_getdirentries = dlsym(RTLD_NEXT, "getdirentries");
+	orig_getdirtree = dlsym(RTLD_NEXT, "getdirtree");
+	orig_freedirtree = dlsym(RTLD_NEXT, "freedirtree");
 }

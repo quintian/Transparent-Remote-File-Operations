@@ -14,13 +14,7 @@
 #define FDADD 1000
 
 /*
-question: 1. for send, recv, better to use the same buf? 2. seperate connect, send, recv on client side? 3. when to close session fd on server? 4. rv < 0, err()? 5. fork() for cp 2?
-5. what to return for client open() client?
-6. recv all or one variable once?
 
-...
-
-void *thread()
 */
 
 // receive the full length msg from client
@@ -30,7 +24,7 @@ void receiveHelper(char *buf, int sessfd)
 	size_t totalReceive = 0;
 	while (totalReceive < sizeof(size_t))
 	{
-		fprintf(stderr, "here:130 \n");
+		// fprintf(stderr, "here:130 \n");
 
 		totalReceive += recv(sessfd, buf + totalReceive, sizeof(size_t) - totalReceive, 0);
 	}
@@ -80,18 +74,20 @@ void openHelper(char *buf, int sessfd)
 	i += sizeof(size_t); // offset for totalSize at the beginning
 
 	// memcpy(&op, buf + i, sizeof(int));
-	op = *(int *)(buf + i);
+	op = *(int *)(buf + i); // 1. op
 	i += sizeof(int);
-	memcpy(&flags, buf + i, sizeof(int));
+	memcpy(&flags, buf + i, sizeof(int)); // 2. flags
 	i += sizeof(int);
-	memcpy(&n, buf + i, sizeof(size_t));
+	memcpy(&n, buf + i, sizeof(size_t)); // 3.n
 	i += sizeof(size_t);
-	char pathname[n + 1]; // changed so print correctly!
-	memcpy(pathname, buf + i, n);
-	fprintf(stderr, "pathname: %s\n", pathname);
-	pathname[n] = 0; // need 0 for function argument
+
+	char pathname[n + 1];		  // changed so print correctly!
+	memcpy(pathname, buf + i, n); // 4. pathname
+	pathname[n] = 0;			  // need 0 for function argument
 	i += n;
-	memcpy(&m, buf + i, sizeof(mode_t));
+
+	// memcpy(&m, buf + i, sizeof(mode_t)); //5. m
+	m = *(mode_t *)(buf + i);
 
 	// // fprintf(stderr, "totalSize: %ld\n", totalSize);
 	fprintf(stderr, "op: %d\n", op);
@@ -105,10 +101,10 @@ void openHelper(char *buf, int sessfd)
 	int fd = open(pathname, flags, m);
 	int e = errno;
 
-	if (fd != -1)
-	{
-		fd += FDADD;
-	}
+	// if (fd != -1)
+	// {
+	// 	fd += FDADD;
+	// }
 
 	memcpy(buf, &fd, sizeof(int));
 	memcpy(buf + sizeof(int), &e, sizeof(int));
@@ -118,12 +114,81 @@ void openHelper(char *buf, int sessfd)
 
 void closeHelper(char *buf, int sessfd)
 {
+	int i = 0;
+	// size_t totalSize;
+	int op;
+	int fd;
+
+	// //op=*(int*)buf,
+	// memcpy(&totalSize,buf, sizeof(size_t));
+	i += sizeof(size_t); // offset for totalSize at the beginning
+
+	// memcpy(&op, buf + i, sizeof(int));
+	op = *(int *)(buf + i);
+	i += sizeof(int);
+	memcpy(&fd, buf + i, sizeof(int));
+	// fd -= FDADD;
+
+	// // fprintf(stderr, "totalSize: %ld\n", totalSize);
+	fprintf(stderr, "op: %d\n", op);
+	fprintf(stderr, "fd: %d\n", fd);
+
+	// call open() and put result in buf, send back to client
+
+	int closeReturn = close(fd);
+	int e = errno;
+
+	memcpy(buf, &closeReturn, sizeof(int));
+	memcpy(buf + sizeof(int), &e, sizeof(int));
+	fprintf(stderr, "msg returned fd, e: %d, %d\n", closeReturn, e);
+	send(sessfd, buf, sizeof(int) * 2, 0);
+}
+// test write(): 440write, then on client side, type text to write, then control d, control c
+void writeHelper(char *buf, int sessfd)
+{
+	int i = 0;
+	// size_t totalSize;
+	int op;
+	int fd;
+	size_t nbyte;
+	// void *bufToWrite;
+
+	// //op=*(int*)buf,
+	// memcpy(&totalSize,buf, sizeof(size_t));
+	i += sizeof(size_t); // offset for totalSize at the beginning
+
+	// memcpy(&op, buf + i, sizeof(int));
+	op = *(int *)(buf + i);
+	i += sizeof(int);
+	memcpy(&fd, buf + i, sizeof(int));
+	// fd -= FDADD;
+	i += sizeof(int);
+	memcpy(&nbyte, buf + i, sizeof(size_t));
+	i += sizeof(size_t);
+	char bufToWrite[nbyte + 1];
+	memcpy(bufToWrite, buf + i, nbyte);
+	// memcpy(pathname, buf + i, n);
+	bufToWrite[nbyte] = 0;
+	fprintf(stderr, "bufToWrite: %s\n", bufToWrite);
+	fprintf(stderr, "op: %d\n", op);
+	fprintf(stderr, "fd: %d\n", fd);
+
+	// call open() and put result in buf, send back to client
+
+	int writeReturn = write(fd, bufToWrite, nbyte);
+	int e = errno;
+
+	memcpy(buf, &writeReturn, sizeof(int));
+	memcpy(buf + sizeof(int), &e, sizeof(int));
+	fprintf(stderr, "msg returned fd, e: %d, %d\n", writeReturn, e);
+	send(sessfd, buf, sizeof(int) * 2, 0);
 }
 
 int main(int argc, char **argv)
 {
 	// char *msg = "Hello from server";
-	char buf[MAXMSGLEN + 1];
+	// char buf[MAXMSGLEN + 1];
+	char buf[2000];
 	char *serverport;
 	unsigned short port;
 	int sockfd, sessfd, rv;
@@ -177,10 +242,13 @@ int main(int argc, char **argv)
 			openHelper(buf, sessfd);
 			break;
 		case 1:
-
+			closeHelper(buf, sessfd);
+			break;
+		case 2:
+			writeHelper(buf, sessfd);
 			break;
 		default:
-			printf("Invalid op");
+			break;
 		}
 
 		//  either client closed connection, or error
