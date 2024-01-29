@@ -110,6 +110,7 @@ void sendRequest(char *buf, size_t totalSize, int sockfd)
 	}
 	fprintf(stderr, "totalSent: %ld \n", totalSent);
 }
+
 void send_recv(char *name, ssize_t totalSize)
 {
 	// connect to server - code from clinet.c line 13-51
@@ -314,7 +315,7 @@ int open(const char *pathname, int flags, ...)
 	memcpy(buf + i, &m, sizeof(mode_t)); // 5. m
 	// buf[i] = '\0';
 
-	fprintf(stderr, "m sent: %o\n",  *(mode_t *)(buf + i));
+	fprintf(stderr, "m sent: %o\n", *(mode_t *)(buf + i));
 	fprintf(stderr, "open() called by path: %s \n mode: %o\n", pathname, m);
 	// char *msg = "open";
 
@@ -340,9 +341,8 @@ int open(const char *pathname, int flags, ...)
 }
 
 int close(int fd)
-{ // helper funciton to forward requests to server
-	// msg = "close";
-	fprintf(stderr, "close() called\n");
+{
+	fprintf(stderr, "\nclose() called\n");
 
 	char buf[1024];
 	int op = 1;
@@ -381,22 +381,61 @@ ssize_t (*orig_read)(int fildes, void *buf, size_t nbyte);
 
 ssize_t read(int fildes, void *buf, size_t nbyte)
 {
+	fprintf(stderr, "\nread() called\n");
 
-	// char *msg = "read";
-	//  send_recv();
-	//  send(sockfd, msg, strlen(msg) + 1, 0);
-	// sendHelper(msg);
-	//  sendHelper(msg, totalSize);
+	int op = 3;
+	size_t totalSize = 2 * sizeof(size_t) + 2 * sizeof(int);
+	char buf1[totalSize]; // to hold request msg to server
 
-	fprintf(stderr, "read() called with %ld bytes\n", nbyte);
-	return orig_read(fildes, buf, nbyte);
+	// snprintf(buf, totalSize, "%zu%d%d%zu%s%o", totalSize, op, flags, n, pathname, m); 1. totalSize 2. op 3.fd, 4.size_t count
+	int i = 0;
+	memcpy(buf1 + i, &totalSize, sizeof(size_t)); // changed!
+	i += sizeof(size_t);
+
+	memcpy(buf1 + i, &op, sizeof(int));
+	i += sizeof(int);
+	// fd += FDADD;
+	memcpy(buf1 + i, &fildes, sizeof(int));
+	i += sizeof(int);
+
+	memcpy(buf1 + i, &nbyte, sizeof(size_t));
+	fprintf(stderr, "read() called  with total size: %ld\n, fd: %d\n: %ld\n, nbyte: %zu\n", totalSize, fildes, nbyte);
+
+	int sockfd = openSocket();
+	sendRequest(buf1, totalSize, sockfd);
+
+	// get message back
+	char buf2[1024]; // to hold the first 2 variables received from server
+	size_t recvSize = sizeof(size_t) + sizeof(int);
+	receiveHelper(buf2, sockfd, recvSize); // receive first 2 variables
+
+	// ssize_t returned= *(ssize_t *)buf2; //returned read_nbytes
+	ssize_t returned;
+	memcpy(&returned, buf2, sizeof(size_t));
+	int e = *(int *)(buf2 + sizeof(ssize_t));
+	fprintf(stderr, "client got messge back read returned: %zu\n", returned);
+	fprintf(stderr, "client got messge back errno: %d\n", e);
+	errno = e;
+
+	// char readContent[nbyte+1]; //to hold the read content
+	char buf3[returned + 1];
+	receiveHelper(buf3, sockfd, returned);
+	buf3[returned] = 0;
+	// receiveHelper(buf, sockfd, returned + 1); // returned is read bytes
+	memcpy(buf, buf3, nbyte + 1);
+
+	fprintf(stderr, "client got messge back read content: %s\n", (char *)buf);
+	fprintf(stderr, "client got messge back read content buf3: %s\n", buf3);
+
+	orig_close(sockfd);
+	return returned;
 }
 
 ssize_t (*orig_write)(int fildes, const void *buf, size_t nbyte);
 
 ssize_t write(int fildes, const void *buf, size_t nbyte)
 {
-	fprintf(stderr, "write() called\n");
+	fprintf(stderr, "\nwrite() called\n");
 	// char *msg = "write";
 	// sendHelper(msg);
 

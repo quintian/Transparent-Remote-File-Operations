@@ -29,13 +29,14 @@ size_t receiveTotalSize(int sessfd)
 	}
 
 	memcpy(&totalSize, buf, sizeof(size_t));
-	fprintf(stderr, "total size after first loop:  %ld\n, totalReceive: %ld", totalSize, totalReceive);
+	fprintf(stderr, "total size after receiveTotalSize:  %ld\n, totalReceive: %ld\n", totalSize, totalReceive);
 	return totalSize - sizeof(size_t);
 }
 // receive the full length msg from client
 void receiveHelper(char *buf, int sessfd, size_t totalSize)
 {
 	// size_t totalSize;
+	fprintf(stderr, "\nreceiveHelper() called\n");
 	size_t totalReceive = 0;
 	// while (totalReceive < sizeof(size_t))
 	// {
@@ -51,6 +52,16 @@ void receiveHelper(char *buf, int sessfd, size_t totalSize)
 	}
 	fprintf(stderr, "totalSize: %ld\ntotalReceive: %ld\n", totalSize, totalReceive);
 	// return buf;
+}
+
+void sendHelper(int sessfd, char *buf, size_t totalSize, int flags)
+{
+	size_t totalSent = 0;
+	while (totalSent < totalSize)
+	{
+		totalSent += send(sessfd, buf + totalSent, totalSize - totalSent, flags); // changed!
+	}
+	fprintf(stderr, "totalSent: %ld \n", totalSent);
 }
 
 void recvVariable(char *buf, int sessfd, size_t vSize)
@@ -193,6 +204,57 @@ void writeHelper(char *buf, int sessfd)
 	send(sessfd, buf2, sizeof(int) * 2, 0);
 }
 
+void readHelper(char *buf, int sessfd)
+{
+	fprintf(stderr, "\nreadHelper() called\n");
+	int i = 0;
+	// size_t totalSize;
+	int op;
+	int fd;
+	size_t nbyte;
+
+	op = *(int *)(buf + i);
+	i += sizeof(int);
+	memcpy(&fd, buf + i, sizeof(int));
+	// fd -= FDADD;
+	i += sizeof(int);
+	memcpy(&nbyte, buf + i, sizeof(size_t));
+	// i += sizeof(size_t);
+	char bufRead[nbyte + 1];
+	// memcpy(bufToWrite, buf + i, nbyte);
+
+	// bufRead[nbyte] = 0;
+	// fprintf(stderr, "bufToWrite: %s\n", bufToWrite);
+	fprintf(stderr, "op: %d\n", op);
+	fprintf(stderr, "fd: %d\n", fd);
+	fprintf(stderr, "nbyte: %ld\n", nbyte);
+
+	// call open() and put result in buf, send back to client
+
+	size_t read_nbyte = read(fd, bufRead, nbyte);
+	//size_t read_nbyte = 0;
+	// while (read_nbyte < nbyte)
+	// {
+	// 	read_nbyte += read(fd, bufRead + read_nbyte, nbyte - read_nbyte);
+	// 	fprintf(stderr, "read_nbyte: %ld\n", read_nbyte);
+	// }
+	fprintf(stderr, "read_nbyte: %ld\n", read_nbyte);
+	int e = errno;
+
+	bufRead[read_nbyte] = 0;
+	
+
+	char buf2[2 * sizeof(int) + read_nbyte + 1]; // buf2 to hold return msg for clent
+
+	memcpy(buf2, &read_nbyte, sizeof(size_t));
+	memcpy(buf2 + sizeof(size_t), &e, sizeof(int));
+	memcpy(buf2 + sizeof(int) + sizeof(size_t), bufRead, read_nbyte); // read content is copied
+	buf2[2 * sizeof(int) + read_nbyte] = 0;
+
+	fprintf(stderr, "returned to client nbytes read, e: %ld, %d\n, read content: %s\n", read_nbyte, e, bufRead);
+	sendHelper(sessfd, buf2, sizeof(int) + sizeof(size_t) + read_nbyte, 0);
+}
+
 int main(int argc, char **argv)
 {
 	// char *msg = "Hello from server";
@@ -257,6 +319,9 @@ int main(int argc, char **argv)
 			break;
 		case 2:
 			writeHelper(buf, sessfd);
+			break;
+		case 3:
+			readHelper(buf, sessfd);
 			break;
 		default:
 			break;
