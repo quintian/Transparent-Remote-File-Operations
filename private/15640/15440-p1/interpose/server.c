@@ -10,6 +10,8 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <dirent.h>
+#include "../include/dirtree.h"
 
 #define MAXMSGLEN 100
 #define FDADD 1000
@@ -205,7 +207,7 @@ void readHelper(char *buf, int sessfd)
 {
 	fprintf(stderr, "\nreadHelper() called\n");
 	int i = 0;
-	// size_t totalSize;
+
 	int op;
 	int fd;
 	size_t nbyte;
@@ -218,16 +220,12 @@ void readHelper(char *buf, int sessfd)
 	memcpy(&nbyte, buf + i, sizeof(size_t));
 	// i += sizeof(size_t);
 	char bufRead[nbyte + 1];
-	// memcpy(bufToWrite, buf + i, nbyte);
 
-	// bufRead[nbyte] = 0;
-	// fprintf(stderr, "bufToWrite: %s\n", bufToWrite);
 	fprintf(stderr, "op: %d\n", op);
 	fprintf(stderr, "fd: %d\n", fd);
 	fprintf(stderr, "nbyte: %ld\n", nbyte);
 
-	// call open() and put result in buf, send back to client
-
+	// call function and put result in buf, send back to client
 	ssize_t read_nbyte = read(fd, bufRead, nbyte);
 	// size_t read_nbyte = 0;
 	//  while (read_nbyte < nbyte)
@@ -376,6 +374,57 @@ void unlinkHelper(char *buf, int sessfd)
 	sendHelper(sessfd, buf2, 2 * sizeof(int), 0);
 }
 
+void getdirentriesHelper(char *buf, int sessfd)
+{
+	fprintf(stderr, "\ngetdirentriesHelper() called\n");
+	int i = 0;
+	int op;
+	int fd;
+	size_t nbyte;
+	off_t *basep = malloc(sizeof(off_t));
+
+	op = *(int *)(buf + i);
+	i += sizeof(int);
+	memcpy(&fd, buf + i, sizeof(int));
+	// fd -= FDADD;
+	i += sizeof(int);
+	memcpy(&nbyte, buf + i, sizeof(size_t));
+
+	i += sizeof(size_t);
+	memcpy(basep, buf + i, sizeof(off_t));
+
+	char bufRead[nbyte + 1];
+
+	fprintf(stderr, "op: %d\n", op);
+	fprintf(stderr, "fd: %d\n", fd);
+	fprintf(stderr, "nbyte: %ld\n", nbyte);
+	fprintf(stderr, "basep: %zo\n", *(off_t *)basep);
+
+	// call function and put result in buf, send back to client
+	ssize_t read_nbyte = getdirentries(fd, bufRead, nbyte, basep);
+	// size_t read_nbyte = 0;
+	//  while (read_nbyte < nbyte)
+	//  {
+	//  	read_nbyte += read(fd, bufRead + read_nbyte, nbyte - read_nbyte);
+	//  	fprintf(stderr, "read_nbyte: %ld\n", read_nbyte);
+	//  }
+	fprintf(stderr, "read_nbyte: %zd\n", read_nbyte);
+	int e = errno;
+
+	bufRead[read_nbyte] = 0;
+
+	char buf2[2 * sizeof(int) + read_nbyte + 1]; // buf2 to hold return msg for clent
+
+	memcpy(buf2, &read_nbyte, sizeof(ssize_t));
+	memcpy(buf2 + sizeof(ssize_t), &e, sizeof(int));
+	memcpy(buf2 + sizeof(int) + sizeof(ssize_t), bufRead, read_nbyte); // read content is copied
+	buf2[sizeof(ssize_t) + sizeof(int) + read_nbyte] = 0;			   // null terminator at the end of buf2
+
+	fprintf(stderr, "returned to client nbytes read, e: %ld, %d\n, direntries content: %s\n", read_nbyte, e, bufRead);
+	sendHelper(sessfd, buf2, sizeof(int) + sizeof(size_t) + read_nbyte, 0);
+	free(basep);
+}
+
 int main(int argc, char **argv)
 {
 	// char *msg = "Hello from server";
@@ -424,6 +473,8 @@ int main(int argc, char **argv)
 		if (sessfd < 0)
 			err(1, 0);
 
+		
+
 		// receive requests and send replies to this client
 		size_t totalSize = receiveTotalSize(sessfd);
 		char buf[totalSize];
@@ -452,6 +503,9 @@ int main(int argc, char **argv)
 			break;
 		case 6:
 			unlinkHelper(buf, sessfd);
+			break;
+		case 7:
+			getdirentriesHelper(buf, sessfd);
 			break;
 		default:
 			break;
