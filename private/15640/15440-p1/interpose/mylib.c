@@ -23,6 +23,7 @@
 
 // int op; // operation ID
 // size_t totalSize;
+int sockfd;
 
 int (*orig_close)(int fildes);
 
@@ -323,14 +324,14 @@ int open(const char *pathname, int flags, ...)
 
 	fprintf(stderr, "total size before send:  %ld\n", totalSize);
 	// send_recv(buf, totalSize);
-	int sockfd = openSocket();
+	// int sockfd = openSocket();
 	sendRequest(buf, totalSize, sockfd);
 
 	// get message back
 	char buf2[1024];
 	size_t recvSize = 2 * sizeof(int);
 	receiveHelper(buf2, sockfd, recvSize);
-	orig_close(sockfd);
+	// orig_close(sockfd);
 
 	int fd = *(int *)buf2;
 	int e = *(int *)(buf2 + sizeof(int));
@@ -360,7 +361,7 @@ int close(int fd)
 	// fd += FDADD;
 	memcpy(buf + i, &fd, sizeof(int));
 
-	int sockfd = openSocket();
+	// int sockfd = openSocket();
 	sendRequest(buf, totalSize, sockfd);
 
 	fprintf(stderr, "close() called  with total size: %ld\n, fd: %d\n", totalSize, fd);
@@ -369,7 +370,7 @@ int close(int fd)
 	char buf2[1024];
 	size_t recvSize = 2 * sizeof(int);
 	receiveHelper(buf2, sockfd, recvSize);
-	orig_close(sockfd);
+	// orig_close(sockfd);
 
 	int returned = *(int *)buf2;
 	int e = *(int *)(buf2 + sizeof(int));
@@ -403,7 +404,7 @@ ssize_t read(int fildes, void *buf, size_t nbyte)
 	memcpy(buf1 + i, &nbyte, sizeof(size_t));
 	fprintf(stderr, "read() called  with total size: %ld \n fd: %d \n nbyte: %zu\n", totalSize, fildes, nbyte);
 
-	int sockfd = openSocket();
+	// int sockfd = openSocket();
 	sendRequest(buf1, totalSize, sockfd);
 
 	// get message back
@@ -429,7 +430,7 @@ ssize_t read(int fildes, void *buf, size_t nbyte)
 	fprintf(stderr, "client got messge back read content: %s\n", (char *)buf);
 	fprintf(stderr, "client got messge back read content buf3: %s\n", buf3);
 
-	orig_close(sockfd);
+	// orig_close(sockfd);
 	return returned;
 }
 
@@ -460,14 +461,14 @@ ssize_t write(int fildes, const void *buf, size_t nbyte)
 	i += sizeof(size_t);
 	memcpy(bufSend + i, buf, nbyte);
 
-	int sockfd = openSocket();
+	// int sockfd = openSocket();
 	sendRequest(bufSend, totalSize, sockfd);
 
 	// get message back
 	char buf2[1024];
 	size_t recvSize = 2 * sizeof(int);
 	receiveHelper(buf2, sockfd, recvSize);
-	orig_close(sockfd);
+	// orig_close(sockfd);
 
 	//  sendHelper(msg, totalSize);
 	fprintf(stderr, "write() called fd %d with %ld bytes\n", fildes, nbyte);
@@ -509,7 +510,7 @@ ssize_t lseek(int fildes, off_t offset, int whence)
 	fprintf(stderr, "offset: %zo\n", offset);
 	fprintf(stderr, "whence: %d\n", whence);
 	// send request
-	int sockfd = openSocket();
+	// int sockfd = openSocket();
 	sendRequest(bufSend, totalSize, sockfd);
 
 	// get message back
@@ -525,7 +526,7 @@ ssize_t lseek(int fildes, off_t offset, int whence)
 	fprintf(stderr, "client got messge back errno: %d\n", e);
 	errno = e;
 
-	orig_close(sockfd);
+	// orig_close(sockfd);
 	return returned;
 }
 
@@ -555,7 +556,7 @@ int stat(const char *restrict pathname, struct stat *restrict statbuf)
 	memcpy(buf1 + i, pathname, pathlen);
 	fprintf(stderr, "stat() called  with total size: %ld \n pathlen: %ld \n pathname: %s\n", totalSize, pathlen, pathname);
 
-	int sockfd = openSocket();
+	// int sockfd = openSocket();
 	sendRequest(buf1, totalSize, sockfd);
 
 	// get message back
@@ -575,7 +576,7 @@ int stat(const char *restrict pathname, struct stat *restrict statbuf)
 
 	fprintf(stderr, "client got messge back stat content: %s\n", (char *)statbuf);
 
-	orig_close(sockfd);
+	// orig_close(sockfd);
 	return returned;
 }
 
@@ -606,7 +607,7 @@ int unlink(const char *pathname)
 	memcpy(buf1 + i, pathname, pathlen);
 	fprintf(stderr, "unlink() called  with total size: %ld \n pathlen: %ld \n pathname: %s\n", totalSize, pathlen, pathname);
 
-	int sockfd = openSocket();
+	// int sockfd = openSocket();
 	sendRequest(buf1, totalSize, sockfd);
 
 	// get message back
@@ -622,7 +623,7 @@ int unlink(const char *pathname)
 	fprintf(stderr, "client got messge back errno: %d\n", e);
 	errno = e;
 
-	orig_close(sockfd);
+	// orig_close(sockfd);
 	return returned;
 }
 
@@ -652,9 +653,9 @@ ssize_t getdirentries(int fd, char *buf, size_t nbyte,
 	i += sizeof(size_t);
 	memcpy(buf1 + i, basep, sizeof(off_t));
 
-	fprintf(stderr, "getdirentries() called  with total size: %ld \n fd: %d \n nbyte: %zu \nbasep: %zo", totalSize, fd, nbyte, *(off_t *)basep);
+	fprintf(stderr, "getdirentries() called  with total size: %ld \n fd: %d \n nbyte: %zu \n basep: %zo\n", totalSize, fd, nbyte, *(off_t *)basep);
 
-	int sockfd = openSocket();
+	// int sockfd = openSocket();
 	sendRequest(buf1, totalSize, sockfd);
 
 	// get message back
@@ -682,7 +683,7 @@ ssize_t getdirentries(int fd, char *buf, size_t nbyte,
 		fprintf(stderr, "client got messge back direntries content buf3: %s\n", buf3);
 	}
 
-	orig_close(sockfd);
+	// orig_close(sockfd);
 	return returned;
 }
 
@@ -724,6 +725,8 @@ void freedirtree(struct dirtreenode *dt)
 void _init(void)
 {
 	// set function pointer orig_open to point to the original open function
+	sockfd = openSocket();
+
 	orig_open = dlsym(RTLD_NEXT, "open");
 	orig_read = dlsym(RTLD_NEXT, "read");
 	orig_close = dlsym(RTLD_NEXT, "close");
@@ -734,4 +737,6 @@ void _init(void)
 	orig_getdirentries = dlsym(RTLD_NEXT, "getdirentries");
 	orig_getdirtree = dlsym(RTLD_NEXT, "getdirtree");
 	orig_freedirtree = dlsym(RTLD_NEXT, "freedirtree");
+
+	orig_close(sockfd);
 }
