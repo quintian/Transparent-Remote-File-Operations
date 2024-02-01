@@ -425,6 +425,17 @@ void getdirentriesHelper(char *buf, int sessfd)
 	free(basep);
 }
 
+// struct dirtreenode *getdirtree(const char *path)
+// {
+
+// }
+
+//  initialize buf, i=0;
+// def construct_tree(parent):
+// if buf[i] != -1: parent->val = buf[i]
+// initialize parent’s children nodes construct_tree(parent->left) construct_tree(parent->right)
+// i += 1
+
 int main(int argc, char **argv)
 {
 	// char *msg = "Hello from server";
@@ -473,48 +484,55 @@ int main(int argc, char **argv)
 		if (sessfd < 0)
 			err(1, 0);
 
-		
+		rv = fork();
+		if (rv == 0)
+		{				   // child process
+			close(sockfd); // child does not need this
+						   // do_stuff(sessfd); // handle client session
+			//  receive requests and send replies to this client
+			size_t totalSize = receiveTotalSize(sessfd);
+			char buf[totalSize];
+			receiveHelper(buf, sessfd, totalSize);
+			// get operation code, then handle the request
+			int op = *(int *)(buf);
+			switch (op)
+			{
+			case 0:
+				openHelper(buf, sessfd);
+				break;
+			case 1:
+				closeHelper(buf, sessfd);
+				break;
+			case 2:
+				writeHelper(buf, sessfd);
+				break;
+			case 3:
+				readHelper(buf, sessfd);
+				break;
+			case 4:
+				lseekHelper(buf, sessfd);
+				break;
+			case 5:
+				statHelper(buf, sessfd);
+				break;
+			case 6:
+				unlinkHelper(buf, sessfd);
+				break;
+			case 7:
+				getdirentriesHelper(buf, sessfd);
+				break;
+			default:
+				break;
+			}
 
-		// receive requests and send replies to this client
-		size_t totalSize = receiveTotalSize(sessfd);
-		char buf[totalSize];
-		receiveHelper(buf, sessfd, totalSize);
-		// get operation code, then handle the request
-		int op = *(int *)(buf);
-		switch (op)
-		{
-		case 0:
-			openHelper(buf, sessfd);
-			break;
-		case 1:
-			closeHelper(buf, sessfd);
-			break;
-		case 2:
-			writeHelper(buf, sessfd);
-			break;
-		case 3:
-			readHelper(buf, sessfd);
-			break;
-		case 4:
-			lseekHelper(buf, sessfd);
-			break;
-		case 5:
-			statHelper(buf, sessfd);
-			break;
-		case 6:
-			unlinkHelper(buf, sessfd);
-			break;
-		case 7:
-			getdirentriesHelper(buf, sessfd);
-			break;
-		default:
-			break;
+			//  either client closed connection, or error
+			if (rv < 0)
+				err(1, 0);
+			close(sessfd); // close one client
+
+			exit(0); // then exit
 		}
-
-		//  either client closed connection, or error
-		if (rv < 0)
-			err(1, 0);
-		close(sessfd); // close one client
+		// close(sessfd); // parent does not need this // should loop back to accept next client
 	}
 	// close socket
 	close(sockfd);
