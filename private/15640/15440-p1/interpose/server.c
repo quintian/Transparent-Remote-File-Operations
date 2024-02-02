@@ -24,10 +24,19 @@ size_t receiveTotalSize(int sessfd)
 	char buf[sizeof(size_t)];
 	size_t totalSize;
 	size_t totalReceive = 0;
+	// size_t recv_once;
 	while (totalReceive < sizeof(size_t))
 	{
 		// fprintf(stderr, "here:130 \n");
-
+		// recv_once = recv(sessfd, buf + totalReceive, sizeof(size_t) - totalReceive, 0);
+		// if (recv_once < 0)
+		// {
+		// 	break;
+		// }
+		// else
+		// {
+		// 	totalReceive += recv_once;
+		// }
 		totalReceive += recv(sessfd, buf + totalReceive, sizeof(size_t) - totalReceive, 0);
 	}
 
@@ -41,16 +50,20 @@ void receiveHelper(char *buf, int sessfd, size_t totalSize)
 	// size_t totalSize;
 	fprintf(stderr, "\nreceiveHelper() called\n");
 	size_t totalReceive = 0;
-	// while (totalReceive < sizeof(size_t))
-	// {
-	// 	totalReceive += recv(sessfd, buf + totalReceive, sizeof(size_t) - totalReceive, 0);
-	// }
-	// memcpy(&totalSize, buf, sizeof(size_t));
+	// size_t recv_once;
 
-	// totalReceive=0;
 	while (totalReceive < totalSize)
 	{
 		// fprintf(stderr, "here:144 \n");
+		// recv_once = recv(sessfd, buf + totalReceive, totalSize - totalReceive, 0);
+		// if (recv_once < 0)
+		// {
+		// 	break;
+		// }
+		// else
+		// {
+		// 	totalReceive += recv_once;
+		// }
 		totalReceive += recv(sessfd, buf + totalReceive, totalSize - totalReceive, 0);
 	}
 	fprintf(stderr, "totalSize: %ld\ntotalReceive: %ld\n", totalSize, totalReceive);
@@ -192,14 +205,14 @@ void writeHelper(char *buf, int sessfd)
 
 	// call open() and put result in buf, send back to client
 
-	int writeReturn = write(fd, bufToWrite, nbyte);
+	ssize_t writeReturn = write(fd, bufToWrite, nbyte);
 	int e = errno;
 
-	char buf2[2 * sizeof(int)]; // buf2 to hold msg back to clent
+	char buf2[sizeof(int) + sizeof(ssize_t)]; // buf2 to hold msg back to clent
 
 	memcpy(buf2, &writeReturn, sizeof(int));
 	memcpy(buf2 + sizeof(int), &e, sizeof(int));
-	fprintf(stderr, "msg returned fd, e: %d, %d\n", writeReturn, e);
+	fprintf(stderr, "msg returned fd, e: %zd, %d\n", writeReturn, e);
 	send(sessfd, buf2, sizeof(int) * 2, 0);
 }
 
@@ -402,12 +415,7 @@ void getdirentriesHelper(char *buf, int sessfd)
 
 	// call function and put result in buf, send back to client
 	ssize_t read_nbyte = getdirentries(fd, bufRead, nbyte, basep);
-	// size_t read_nbyte = 0;
-	//  while (read_nbyte < nbyte)
-	//  {
-	//  	read_nbyte += read(fd, bufRead + read_nbyte, nbyte - read_nbyte);
-	//  	fprintf(stderr, "read_nbyte: %ld\n", read_nbyte);
-	//  }
+
 	fprintf(stderr, "read_nbyte: %zd\n", read_nbyte);
 	int e = errno;
 
@@ -430,11 +438,98 @@ void getdirentriesHelper(char *buf, int sessfd)
 
 // }
 
-//  initialize buf, i=0;
-// def construct_tree(parent):
-// if buf[i] != -1: parent->val = buf[i]
-// initialize parent’s children nodes construct_tree(parent->left) construct_tree(parent->right)
-// i += 1
+// initialize buf, i=0;
+int getTreeSize(struct dirtreenode *dirtree)
+{
+	int totalSize = 0;
+	struct dirtreenode *cursor = dirtree;
+
+	totalSize += sizeof(int); // set the room for name_len
+	totalSize += strlen(cursor->name);
+	totalSize += sizeof(int); // set space for num_subdirs
+	if (cursor->num_subdirs > 0)
+	{
+		for (int i = 0; i < cursor->num_subdirs; i++)
+		{
+			// int offset = i * sizeof(struct dirtreenode *);
+			// cursor = cursor->subdirs + offset;
+			// totalSize += strlen(cursor->name);
+			totalSize += getTreeSize(cursor->subdirs[i]);
+		}
+	}
+	return totalSize;
+}
+
+void deconstruct_tree(struct dirtreenode *dirtree, char *buf, int offset)
+{
+	// int offset = 0;
+	struct dirtreenode *cursor = dirtree;
+	int name_len = (int)strlen(cursor->name);
+	memcpy(buf + offset, &name_len, sizeof(int)); // copy name_len
+	offset += sizeof(int);
+	memcpy(buf + offset, cursor->name, strlen(cursor->name));
+	offset += strlen(cursor->name);
+	memcpy(buf + offset, &cursor->num_subdirs, sizeof(int));
+
+	fprintf(stderr, "tree deconstruct got name: %s \n", cursor->name + '\0');
+
+	if (cursor->num_subdirs > 0)
+	{
+		for (int i = 0; i < cursor->num_subdirs; i++)
+		{
+			// int offset
+			// cursor = cursor->subdirs + i * sizeof(struct dirtreenode *);
+			// totalSize += strlen(cursor->name);
+			return deconstruct_tree(cursor->subdirs[i], buf, offset);
+		}
+	}
+	else
+	{
+		return;
+	}
+}
+
+void getdirtreeHelper(char *buf, int sessfd)
+{
+	fprintf(stderr, "\ngetdirtreeHelper() called\n");
+	int i = 0;
+
+	int op;
+	// int fd;
+	size_t pathlen;
+
+	op = *(int *)(buf + i);
+
+	i += sizeof(int);
+	memcpy(&pathlen, buf + i, sizeof(size_t));
+	fprintf(stderr, "pathlen: %ld\n", pathlen);
+
+	i += sizeof(size_t);
+	char pathname[pathlen];
+	memcpy(pathname, buf + i, pathlen); // 4. pathname
+	// pathname[pathlen] = 0;				// add null terminator
+
+	fprintf(stderr, "op: %d\n", op);
+	// fprintf(stderr, "fd: %d\n", fd);
+	fprintf(stderr, "pathlen: %ld\n", pathlen);
+	fprintf(stderr, "pathname: %s\n", pathname);
+
+	struct dirtreenode *dirtree = getdirtree(pathname);
+	int e = errno;
+
+	int treeSize = getTreeSize(dirtree);
+	char buf2[treeSize + 2 * sizeof(int)];
+
+	memcpy(buf2, &treeSize, sizeof(int));
+	memcpy(buf2 + sizeof(int), &e, sizeof(int));
+	deconstruct_tree(dirtree, buf2 + 2 * sizeof(int), 0);
+
+	sendHelper(sessfd, buf2, 2 * sizeof(int) + treeSize, 0);
+
+	fprintf(stderr, "returned to client nbytes in tree, e: %d, %d\n, tree buf: %s\n", treeSize, e, buf2);
+	
+	freedirtree(dirtree);
+}
 
 int main(int argc, char **argv)
 {
@@ -485,46 +580,57 @@ int main(int argc, char **argv)
 			err(1, 0);
 
 		rv = fork();
-		if (rv == 0)
-		{				   // child process
-			close(sockfd); // child does not need this
-						   // do_stuff(sessfd); // handle client session
-			//  receive requests and send replies to this client
-			size_t totalSize = receiveTotalSize(sessfd);
-			char buf[totalSize];
-			receiveHelper(buf, sessfd, totalSize);
-			// get operation code, then handle the request
-			int op = *(int *)(buf);
-			switch (op)
-			{
-			case 0:
-				openHelper(buf, sessfd);
-				break;
-			case 1:
-				closeHelper(buf, sessfd);
-				break;
-			case 2:
-				writeHelper(buf, sessfd);
-				break;
-			case 3:
-				readHelper(buf, sessfd);
-				break;
-			case 4:
-				lseekHelper(buf, sessfd);
-				break;
-			case 5:
-				statHelper(buf, sessfd);
-				break;
-			case 6:
-				unlinkHelper(buf, sessfd);
-				break;
-			case 7:
-				getdirentriesHelper(buf, sessfd);
-				break;
-			default:
-				break;
-			}
+		if (rv == 0) // child process
 
+		{
+			close(sockfd); // child does not need this
+			while (1)
+			{
+				// child process
+				fprintf(stderr, "child process \n");
+
+				// do_stuff(sessfd); // handle client session
+				//  receive requests and send replies to this client
+				size_t totalSize = receiveTotalSize(sessfd);
+				if (totalSize < 0)
+				{ // added for end of the client
+					break;
+				}
+				char buf[totalSize];
+				receiveHelper(buf, sessfd, totalSize);
+				// get operation code, then handle the request
+				int op = *(int *)(buf);
+				switch (op)
+				{
+				case 0:
+					openHelper(buf, sessfd);
+					fprintf(stderr, "open \n");
+					break;
+				case 1:
+					closeHelper(buf, sessfd);
+					break;
+				case 2:
+					writeHelper(buf, sessfd);
+					break;
+				case 3:
+					readHelper(buf, sessfd);
+					break;
+				case 4:
+					lseekHelper(buf, sessfd);
+					break;
+				case 5:
+					statHelper(buf, sessfd);
+					break;
+				case 6:
+					unlinkHelper(buf, sessfd);
+					break;
+				case 7:
+					getdirentriesHelper(buf, sessfd);
+					break;
+				default:
+					break;
+				}
+			}
 			//  either client closed connection, or error
 			if (rv < 0)
 				err(1, 0);

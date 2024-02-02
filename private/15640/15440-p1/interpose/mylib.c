@@ -187,7 +187,7 @@ void send_recv(char *name, ssize_t totalSize)
 	int e = *(int *)(buf + sizeof(int));
 	fprintf(stderr, "client got messge back fd: %d\n", fd);
 	fprintf(stderr, "client got messge back errno: %d\n", e);
-	orig_close(sockfd);
+	// orig_close(sockfd);
 }
 
 void sendHelper(char *name)
@@ -272,7 +272,7 @@ void sendHelper(char *name)
 	// fprintf(stderr, "client got messge back fd: %d\n", fd);
 	// fprintf(stderr, "client got messge back errno: %d\n", e);
 
-	orig_close(sockfd);
+	// orig_close(sockfd);
 }
 
 /* design:
@@ -304,7 +304,7 @@ int open(const char *pathname, int flags, ...)
 	// snprintf(buf, totalSize, "%zu%d%d%zu%s%o", totalSize, op, flags, n, pathname, m);
 	int i = 0;
 	memcpy(buf, &totalSize, sizeof(size_t));
-	fprintf(stderr, "open() called by path 1: %s \n buf: %s with total size %ld\n", pathname, buf, totalSize);
+	fprintf(stderr, "\nopen() called by path: %s \n buf: %s with total size %ld\n", pathname, buf, totalSize);
 	i += sizeof(size_t);
 	memcpy(buf + i, &op, sizeof(int)); // 1. op
 	i += sizeof(int);
@@ -466,15 +466,15 @@ ssize_t write(int fildes, const void *buf, size_t nbyte)
 
 	// get message back
 	char buf2[1024];
-	size_t recvSize = 2 * sizeof(int);
+	size_t recvSize = sizeof(int) + sizeof(ssize_t);
 	receiveHelper(buf2, sockfd, recvSize);
 	// orig_close(sockfd);
 
 	//  sendHelper(msg, totalSize);
 	fprintf(stderr, "write() called fd %d with %ld bytes\n", fildes, nbyte);
-	int returned = *(int *)buf2;
-	int e = *(int *)(buf2 + sizeof(int));
-	fprintf(stderr, "client got messge back write returned: %d\n", returned);
+	ssize_t returned = *(ssize_t *)buf2;
+	int e = *(int *)(buf2 + sizeof(ssize_t));
+	fprintf(stderr, "client got messge back write returned: %zd\n", returned);
 	fprintf(stderr, "client got messge back errno: %d\n", e);
 	errno = e;
 	return returned;
@@ -692,20 +692,104 @@ ssize_t getdirentries(int fd, char *buf, size_t nbyte,
 // 	const char *name; // name of the directory
 // 	int num_subdirs;  // number of subdirectories struct dirtreenode **subdirs; // pointer to array of
 // };					  // dirtreenode pointers, one for each subdirectory
+void construct_tree(char *tree_buf, struct dirtreenode *dirtree, int offset)
+{
+
+	struct dirtreenode *cursor = dirtree;
+	//int offset = 0;
+	int name_len;
+	//char *name;
+	int num_subdirs;
+
+	name_len = *(int *)(tree_buf + offset);
+	offset += sizeof(int);
+
+	char name[name_len + 1];
+	memcpy(name, tree_buf + offset, name_len);
+	offset += name_len;
+	name[name_len] = 0;
+	fprintf(stderr, "tree construct got name: %s \n", name);
+
+
+	num_subdirs = *(int *)(tree_buf + offset);
+	offset += sizeof(int);
+
+	cursor->name = name;
+	cursor->num_subdirs = num_subdirs;
+
+	if (num_subdirs == 0)
+	{
+		cursor->subdirs = NULL;
+		return;
+	}
+	else
+	{
+		cursor->subdirs = malloc(num_subdirs * sizeof(struct dirtreenote *));
+		for (int i = 0; i < cursor->num_subdirs; i++)
+		{
+			construct_tree(tree_buf, cursor->subdirs[i], offset);
+		}
+	}
+}
 
 struct dirtreenode *(*orig_getdirtree)(const char *path);
 
 struct dirtreenode *getdirtree(const char *path)
 {
-	// char *msg = "getdirtree";
-
-	// send(sockfd, msg, strlen(msg) + 1, 0);
-	// sendHelper(msg);
-	// sendHelper(msg, totalSize);
-	// send_recv();
 
 	fprintf(stderr, "getdirtree() called path %s \n", path);
-	return orig_getdirtree(path);
+
+	//  variables: size_t totalSise, int op, pathlen, pathname
+	int op = 5;
+	size_t pathlen = strlen(path);
+	size_t totalSize = 2 * sizeof(size_t) + sizeof(int) + pathlen;
+
+	char buf1[totalSize]; // to hold request msg to server
+
+	int i = 0;
+	memcpy(buf1 + i, &totalSize, sizeof(size_t));
+	i += sizeof(size_t);
+
+	memcpy(buf1 + i, &op, sizeof(int));
+	i += sizeof(int);
+	// fd += FDADD;
+	memcpy(buf1 + i, &pathlen, sizeof(size_t));
+	i += sizeof(size_t);
+
+	memcpy(buf1 + i, path, pathlen);
+	fprintf(stderr, "getdirtree() called  with total size: %ld \n pathlen: %ld \n pathname: %s\n", totalSize, pathlen, path);
+
+	// int sockfd = openSocket();
+	sendRequest(buf1, totalSize, sockfd);
+
+	// get message back
+	char buf2[1024]; // to hold the first 2 variables received from server
+	size_t recvSize = 2 * sizeof(int);
+	receiveHelper(buf2, sockfd, recvSize); // receive first 2 variables
+
+	// ssize_t returned= *(ssize_t *)buf2; //returned read_nbytes
+	int returned_size;
+	memcpy(&returned_size, buf2, sizeof(int));
+	int e = *(int *)(buf2 + sizeof(int));
+	fprintf(stderr, "client got messge back stat returned_size: %d\n", returned_size);
+	fprintf(stderr, "client got messge back errno: %d\n", e);
+	errno = e;
+
+	char tree_buf[returned_size];
+
+	receiveHelper((char *)tree_buf, sockfd, sizeof(returned_size));
+
+	// construct the dirtree
+
+	struct dirtreenode *dirtree = NULL;
+
+	if (returned_size > 0)
+	{
+		dirtree = malloc(returned_size);
+		construct_tree(tree_buf, dirtree, 0);
+	}
+
+	return dirtree;
 }
 
 void (*orig_freedirtree)(struct dirtreenode *dt);
@@ -738,5 +822,5 @@ void _init(void)
 	orig_getdirtree = dlsym(RTLD_NEXT, "getdirtree");
 	orig_freedirtree = dlsym(RTLD_NEXT, "freedirtree");
 
-	orig_close(sockfd);
+	// orig_close(sockfd);
 }
