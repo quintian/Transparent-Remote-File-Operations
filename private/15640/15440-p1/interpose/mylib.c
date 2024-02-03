@@ -30,15 +30,6 @@ int (*orig_close)(int fildes);
 void receiveHelper(char *buf, int sockfd, size_t recvSize)
 {
 	size_t totalReceive = 0;
-	// while (totalReceive < sizeof(size_t))
-	// {
-	// 	fprintf(stderr, "here:130 ");
-
-	// 	totalReceive += recv(sessfd, buf + totalReceive, sizeof(size_t) - totalReceive, 0);
-	// }
-
-	// memcpy(&totalSize, buf, sizeof(size_t));
-	// fprintf(stderr, "total size after first loop:  %ld\n, totalReceive: %ld", totalSize, totalReceive);
 
 	while (totalReceive < recvSize)
 
@@ -428,7 +419,7 @@ ssize_t read(int fildes, void *buf, size_t nbyte)
 	memcpy(buf, buf3, nbyte + 1);
 
 	fprintf(stderr, "client got messge back read content: %s\n", (char *)buf);
-	fprintf(stderr, "client got messge back read content buf3: %s\n", buf3);
+	// fprintf(stderr, "client got messge back read content buf3: %s\n", buf3);
 
 	// orig_close(sockfd);
 	return returned;
@@ -692,44 +683,70 @@ ssize_t getdirentries(int fd, char *buf, size_t nbyte,
 // 	const char *name; // name of the directory
 // 	int num_subdirs;  // number of subdirectories struct dirtreenode **subdirs; // pointer to array of
 // };					  // dirtreenode pointers, one for each subdirectory
-void construct_tree(char *tree_buf, struct dirtreenode *dirtree, int offset)
+struct dirtreenode *construct_tree(char *tree_buf, int *offset)
 {
-
-	struct dirtreenode *cursor = dirtree;
-	//int offset = 0;
 	int name_len;
-	//char *name;
 	int num_subdirs;
 
-	name_len = *(int *)(tree_buf + offset);
-	offset += sizeof(int);
+
+	memcpy(&name_len, tree_buf + *offset, sizeof(int));
+	*offset += sizeof(int);
 
 	char name[name_len + 1];
-	memcpy(name, tree_buf + offset, name_len);
-	offset += name_len;
+	memcpy(name, tree_buf + *offset, name_len);
 	name[name_len] = 0;
-	fprintf(stderr, "tree construct got name: %s \n", name);
 
+	fprintf(stderr, "tree deserilization got name_len: %d\n", name_len);
+	fprintf(stderr, "tree deserilization got name2: %s \n", name + '\0');
 
-	num_subdirs = *(int *)(tree_buf + offset);
-	offset += sizeof(int);
+	*offset += name_len;
+	memcpy(&num_subdirs, tree_buf + *offset, sizeof(int));
+	*offset += sizeof(int);
+	fprintf(stderr, "tree deserilization got num_dir: %d \n", num_subdirs);
 
-	cursor->name = name;
-	cursor->num_subdirs = num_subdirs;
+	struct dirtreenode *dirtree = malloc(sizeof(int) + 2 * sizeof(void *)); // molloc treenode size
+
+	dirtree->name = malloc(name_len + 1);
+	memcpy(dirtree->name, name, name_len);
+	// dirtree->name[name_len] = '\0';
+	//  dirtree->num_subdirs = malloc(sizeof(int));
+	memcpy(dirtree->num_subdirs, &num_subdirs, name_len);
 
 	if (num_subdirs == 0)
 	{
-		cursor->subdirs = NULL;
-		return;
+		dirtree->subdirs = NULL;
 	}
-	else
+
+	struct dirtreenode *subdirs[num_subdirs];
+	dirtree->subdirs = malloc(num_subdirs * sizeof(struct dirtreenode *));
+	memcpy(dirtree->subdirs, &subdirs, num_subdirs * sizeof(struct dirtreenode *));
+
+	for (int i = 0; i < num_subdirs; i++)
 	{
-		cursor->subdirs = malloc(num_subdirs * sizeof(struct dirtreenote *));
-		for (int i = 0; i < cursor->num_subdirs; i++)
-		{
-			construct_tree(tree_buf, cursor->subdirs[i], offset);
-		}
+		subdirs[i] = construct_tree(tree_buf, offset);
 	}
+
+	// for (int i = 0; i < num_subdirs; i++)
+	// {
+	// 	struct dirtreenote *child = dirtree->subdirs + i * sizeof(struct dirtreenode *);
+
+	// 	// dirtree->subdirs[i] = malloc(sizeof(struct dirtreenode *));
+	// 	child = malloc(sizeof(int) + 2 * sizeof(void *));
+
+	// 	construct_tree(tree_buf, child, offset);
+	// }
+	return dirtree;
+}
+
+void printBuffer(unsigned char *buffer, size_t bufferSize)
+{
+	for (size_t i = 0; i < bufferSize; i++)
+	{
+		printf("%02X ", buffer[i]); // Prints byte in hexadecimal format
+		if ((i + 1) % 16 == 0)
+			printf("\n"); // New line for readability after every 16 bytes
+	}
+	printf("\n"); // New line after printing the entire buffer
 }
 
 struct dirtreenode *(*orig_getdirtree)(const char *path);
@@ -740,7 +757,7 @@ struct dirtreenode *getdirtree(const char *path)
 	fprintf(stderr, "getdirtree() called path %s \n", path);
 
 	//  variables: size_t totalSise, int op, pathlen, pathname
-	int op = 5;
+	int op = 8;
 	size_t pathlen = strlen(path);
 	size_t totalSize = 2 * sizeof(size_t) + sizeof(int) + pathlen;
 
@@ -771,38 +788,48 @@ struct dirtreenode *getdirtree(const char *path)
 	int returned_size;
 	memcpy(&returned_size, buf2, sizeof(int));
 	int e = *(int *)(buf2 + sizeof(int));
-	fprintf(stderr, "client got messge back stat returned_size: %d\n", returned_size);
+	fprintf(stderr, "client got messge back dirtree returned_size: %d\n", returned_size);
 	fprintf(stderr, "client got messge back errno: %d\n", e);
 	errno = e;
 
-	char tree_buf[returned_size];
+	char *tree_buf = malloc(returned_size);
 
-	receiveHelper((char *)tree_buf, sockfd, sizeof(returned_size));
+	receiveHelper(tree_buf, sockfd, returned_size);
 
 	// construct the dirtree
 
-	struct dirtreenode *dirtree = NULL;
+	printBuffer(tree_buf, returned_size);
 
-	if (returned_size > 0)
-	{
-		dirtree = malloc(returned_size);
-		construct_tree(tree_buf, dirtree, 0);
-	}
-
-	return dirtree;
+	// struct dirtreenode *dirtree;
+	int offset = 0;
+	return construct_tree(tree_buf, &offset);
+	// return dirtree;
 }
 
 void (*orig_freedirtree)(struct dirtreenode *dt);
 void freedirtree(struct dirtreenode *dt)
 {
-	// char *msg = "freedirtree";
-
-	// send(sockfd, msg, strlen(msg) + 1, 0);
-	// sendHelper(msg);
-	// send_recv();
-
 	fprintf(stderr, "freedirtree() called  \n");
-	return orig_freedirtree(dt);
+	if (dt == NULL)
+		return;
+	if (dt->num_subdirs == 0)
+	{
+		free(dt->name);
+		// free(dt->num_subdirs);
+		//  for (int i=0; i<dt->num_subdirs; i++){
+		//  	freedirtree(dt->subdirs[i]);
+		//  }
+		free(dt->subdirs);
+		free(dt);
+	}
+	else
+	{
+		for (int i = 0; i < dt->num_subdirs; i++)
+		{
+			freedirtree(dt->subdirs[i]);
+		}
+	}
+	// return orig_freedirtree(dt);
 }
 
 // This function is automatically called when program is started

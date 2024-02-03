@@ -19,31 +19,26 @@
 /*
 
 */
+
 size_t receiveTotalSize(int sessfd)
 {
 	char buf[sizeof(size_t)];
 	size_t totalSize;
-	size_t totalReceive = 0;
+	ssize_t totalReceive = 0;
 	// size_t recv_once;
 	while (totalReceive < sizeof(size_t))
 	{
-		// fprintf(stderr, "here:130 \n");
-		// recv_once = recv(sessfd, buf + totalReceive, sizeof(size_t) - totalReceive, 0);
-		// if (recv_once < 0)
-		// {
-		// 	break;
-		// }
-		// else
-		// {
-		// 	totalReceive += recv_once;
-		// }
 		totalReceive += recv(sessfd, buf + totalReceive, sizeof(size_t) - totalReceive, 0);
+		if(totalReceive<0) {
+			close(sessfd);
+		}
 	}
 
 	memcpy(&totalSize, buf, sizeof(size_t));
 	fprintf(stderr, "total size after receiveTotalSize:  %ld\n, totalReceive: %ld\n", totalSize, totalReceive);
 	return totalSize - sizeof(size_t);
 }
+
 // receive the full length msg from client
 void receiveHelper(char *buf, int sessfd, size_t totalSize)
 {
@@ -82,8 +77,7 @@ void sendHelper(int sessfd, char *buf, size_t totalSize, int flags)
 
 void recvVariable(char *buf, int sessfd, size_t vSize)
 {
-	// memcpy(&totalSize, buf, sizeof(size_t));
-	// totalReceive += sizeof(size_t);
+	
 	size_t totalReceive = 0;
 
 	while (totalReceive < vSize)
@@ -336,15 +330,17 @@ void statHelper(char *buf, int sessfd)
 	fprintf(stderr, "statbuf: %s\n", (char *)statbuf);
 	int e = errno;
 
-	char buf2[2 * sizeof(int) + sizeof(statbuf)]; // buf2 to hold return msg for clent
+	// buf2 to hold return msg for clent
+	char *buf2 = malloc(sizeof(2 * sizeof(int) + sizeof(struct stat)));
 
 	memcpy(buf2, &stat_returned, sizeof(int));
 	memcpy(buf2 + sizeof(int), &e, sizeof(int));
-	memcpy(buf2 + 2 * sizeof(int), statbuf, sizeof(struct stat)); //??
-	free(statbuf);
+	memcpy(buf2 + 2 * sizeof(int), statbuf, sizeof(struct stat));
 
 	fprintf(stderr, "returned to client stat_returned, e: %d, %d\n, statbuf: %s\n", stat_returned, e, (char *)statbuf);
 	sendHelper(sessfd, buf2, 2 * sizeof(int) + sizeof(struct stat), 0);
+	free(statbuf);
+	free(buf2);
 }
 
 void unlinkHelper(char *buf, int sessfd)
@@ -442,21 +438,24 @@ void getdirentriesHelper(char *buf, int sessfd)
 int getTreeSize(struct dirtreenode *dirtree)
 {
 	int totalSize = 0;
-	struct dirtreenode *cursor = dirtree;
+	// struct dirtreenode *cursor = dirtree;
 
 	totalSize += sizeof(int); // set the room for name_len
-	totalSize += strlen(cursor->name);
+	// totalSize += strlen(cursor->name);
+	totalSize += strlen(dirtree->name);
 	totalSize += sizeof(int); // set space for num_subdirs
-	if (cursor->num_subdirs > 0)
+	fprintf(stderr, "\nget tree totalSize: %d \n", totalSize);
+	if (dirtree->num_subdirs > 0)
 	{
-		for (int i = 0; i < cursor->num_subdirs; i++)
+		for (int i = 0; i < dirtree->num_subdirs; i++)
 		{
 			// int offset = i * sizeof(struct dirtreenode *);
 			// cursor = cursor->subdirs + offset;
 			// totalSize += strlen(cursor->name);
-			totalSize += getTreeSize(cursor->subdirs[i]);
+			totalSize += getTreeSize(dirtree->subdirs[i]);
 		}
 	}
+	fprintf(stderr, "\nget tree totalSize2: %d \n", totalSize);
 	return totalSize;
 }
 
@@ -470,6 +469,9 @@ void deconstruct_tree(struct dirtreenode *dirtree, char *buf, int offset)
 	memcpy(buf + offset, cursor->name, strlen(cursor->name));
 	offset += strlen(cursor->name);
 	memcpy(buf + offset, &cursor->num_subdirs, sizeof(int));
+	offset += sizeof(int);
+
+	fprintf(stderr, "tree deconstruct got num_dir: %d \n", cursor->num_subdirs);
 
 	fprintf(stderr, "tree deconstruct got name: %s \n", cursor->name + '\0');
 
@@ -477,10 +479,7 @@ void deconstruct_tree(struct dirtreenode *dirtree, char *buf, int offset)
 	{
 		for (int i = 0; i < cursor->num_subdirs; i++)
 		{
-			// int offset
-			// cursor = cursor->subdirs + i * sizeof(struct dirtreenode *);
-			// totalSize += strlen(cursor->name);
-			return deconstruct_tree(cursor->subdirs[i], buf, offset);
+			deconstruct_tree(cursor->subdirs[i], buf, offset);
 		}
 	}
 	else
@@ -488,7 +487,16 @@ void deconstruct_tree(struct dirtreenode *dirtree, char *buf, int offset)
 		return;
 	}
 }
-
+void printBuffer(unsigned char *buffer, size_t bufferSize)
+{
+	for (size_t i = 0; i < bufferSize; i++)
+	{
+		printf("%02X ", buffer[i]); // Prints byte in hexadecimal format
+		if ((i + 1) % 16 == 0)
+			printf("\n"); // New line for readability after every 16 bytes
+	}
+	printf("\n"); // New line after printing the entire buffer
+}
 void getdirtreeHelper(char *buf, int sessfd)
 {
 	fprintf(stderr, "\ngetdirtreeHelper() called\n");
@@ -518,17 +526,67 @@ void getdirtreeHelper(char *buf, int sessfd)
 	int e = errno;
 
 	int treeSize = getTreeSize(dirtree);
-	char buf2[treeSize + 2 * sizeof(int)];
+	// char buf2[treeSize + 2 * sizeof(int)];
+	char *buf2 = malloc(treeSize + 2 * sizeof(int));
 
 	memcpy(buf2, &treeSize, sizeof(int));
 	memcpy(buf2 + sizeof(int), &e, sizeof(int));
+	// int offset1 = 0; // buf2 offset
+
 	deconstruct_tree(dirtree, buf2 + 2 * sizeof(int), 0);
+
+	printBuffer(buf2 + 2 * sizeof(int), treeSize);
 
 	sendHelper(sessfd, buf2, 2 * sizeof(int) + treeSize, 0);
 
-	fprintf(stderr, "returned to client nbytes in tree, e: %d, %d\n, tree buf: %s\n", treeSize, e, buf2);
-	
+	fprintf(stderr, "returned to client nbytes in tree, e: %d, %d\n, tree buf: %s\n", treeSize, e, buf2 + 2 * sizeof(int));
+
 	freedirtree(dirtree);
+	//**********************
+	// int name_len;
+	// // char *name;
+	// int num_subdirs;
+
+	// int offset = 2 * sizeof(int);
+
+	// // name_len = *(int *)(tree_buf + offset);
+	// memcpy(&name_len, buf2 + offset, sizeof(int));
+	// offset += sizeof(int);
+
+	// char name[name_len + 1];
+	// // char *name = malloc(name_len);
+	// memcpy(name, buf2 + offset, name_len);
+	// name[name_len] = 0;
+
+	// // char name[name_len + 1];
+	// // char *name = malloc(name_len);
+	// // memcpy(name, buf2 + offset, name_len);
+	// offset += name_len;
+	// // memcpy(name + name_len, '\0', sizeof(char));
+	// fprintf(stderr, "tree deserilization got name_len: %d\n", name_len);
+	// fprintf(stderr, "tree deserilization got name: %s \n", name + '\0');
+
+	// memcpy(&num_subdirs, buf2 + offset, sizeof(int));
+	// offset += sizeof(int);
+	// fprintf(stderr, "tree deserilization got num_dir: %d \n", num_subdirs);
+
+	// // second round
+	// memcpy(&name_len, buf2 + offset, sizeof(int));
+	// offset += sizeof(int);
+
+	// // char name[name_len + 1];
+	// char name2[5];
+	// // char *name2=malloc(name_len);
+	// memcpy(name2, buf2 + offset, name_len);
+	// name2[name_len] = 0;
+	// //  memcpy(name + name_len, &('\0'), sizeof(char));
+	// fprintf(stderr, "tree deserilization got name_len: %d\n", name_len);
+	// fprintf(stderr, "tree deserilization got name2: %s \n", name2);
+
+	// offset += name_len;
+	// memcpy(&num_subdirs, buf2 + offset, sizeof(int));
+	// offset += sizeof(int);
+	// fprintf(stderr, "tree deserilization got num_dir: %d \n", num_subdirs);
 }
 
 int main(int argc, char **argv)
@@ -587,7 +645,7 @@ int main(int argc, char **argv)
 			while (1)
 			{
 				// child process
-				fprintf(stderr, "child process \n");
+				fprintf(stderr, "\n child process \n");
 
 				// do_stuff(sessfd); // handle client session
 				//  receive requests and send replies to this client
@@ -626,6 +684,9 @@ int main(int argc, char **argv)
 					break;
 				case 7:
 					getdirentriesHelper(buf, sessfd);
+					break;
+				case 8:
+					getdirtreeHelper(buf, sessfd);
 					break;
 				default:
 					break;
